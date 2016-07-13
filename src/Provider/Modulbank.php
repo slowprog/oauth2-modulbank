@@ -2,9 +2,11 @@
 
 namespace League\OAuth2\Client\Provider;
 
-use League\OAuth2\Client\Token\AccessToken;
 use League\OAuth2\Client\Tool\BearerAuthorizationTrait;
 use Psr\Http\Message\ResponseInterface;
+use League\OAuth2\Client\Token\AccessToken;
+use League\OAuth2\Client\Token\ModulbankAccessToken;
+use League\OAuth2\Client\Grant\AbstractGrant;
 
 class Modulbank extends AbstractProvider
 {
@@ -13,9 +15,16 @@ class Modulbank extends AbstractProvider
     /**
      * Debug mode
      *
-     * @var Api
+     * @var bool
      */
     protected $debug = false;
+
+    /**
+     * Token
+     *
+     * @var string
+     */
+    protected $token;
 
     /**
      * Api domain
@@ -25,6 +34,28 @@ class Modulbank extends AbstractProvider
     protected $domainApi = 'https://api.modulbank.ru/v1';
 
     /**
+     * Constructs an OAuth 2.0 service provider.
+     *
+     * @param array $options An array of options to set on this provider.
+     *     Options include `clientId`, `clientSecret`, `redirectUri`, and `state`.
+     *     Individual providers may introduce more options, as needed.
+     * @param array $collaborators An array of collaborators that may be used to
+     *     override this provider's default behavior. Collaborators include
+     *     `grantFactory`, `requestFactory`, `httpClient`, and `randomFactory`.
+     *     Individual providers may introduce more collaborators, as needed.
+     */
+    public function __construct(array $options = [], array $collaborators = [])
+    {
+        parent::__construct($options, $collaborators);
+
+        if ($this->token) {
+            $this->token = new ModulbankAccessToken([
+                'accessToken' => $this->token
+            ]);
+        }
+    }
+
+    /**
      * Get authorization url to begin OAuth flow
      *
      * @return string
@@ -32,6 +63,18 @@ class Modulbank extends AbstractProvider
     public function getBaseAuthorizationUrl()
     {
         return $this->domainApi.'/oauth/authorize';
+    }
+
+    /**
+     * Get authorization url with debug
+     *
+     * @return string
+     */
+    public function getAuthorizationUrlShort()
+    {
+        $base = $this->getBaseAuthorizationUrl();
+
+        return $this->debug?$this->appendQuery($base, 'sandbox=on'):$base;
     }
 
     /**
@@ -52,6 +95,7 @@ class Modulbank extends AbstractProvider
                     'cellPhone' => $cellPhone,
                     'city' => $city,
                     'other' => $other,
+                    'redirectUri' => $this->redirectUri,
                 ]),
             ]
         ));
@@ -60,14 +104,25 @@ class Modulbank extends AbstractProvider
 
         $params = [
             'code' => $result,
-            'redirecturi' => $this->redirectUri
         ];
 
         if ($this->debug) {
             $params['sandbox'] = 'on';
+            $params['redirecturi'] = $this->redirectUri;
         }
 
-        return $this->appendQuery($this->domainApi.'/registration/setdata', $this->buildQueryString($params));
+        return $this->appendQuery($this->domainApi.'/registration/register', $this->buildQueryString($params));
+    }
+
+    /**
+     * Get authorization params.
+     *
+     * @param  array $params
+     * @return array
+     */
+    public function getAuthorizationParams(array $params = [])
+    {
+        return $this->getAuthorizationParameters($params);
     }
 
     /**
@@ -95,6 +150,71 @@ class Modulbank extends AbstractProvider
     }
 
     /**
+     * Get account info
+     *
+     * @return array
+     * @permission account-info
+     */
+    public function getAccountInfo()
+    {
+        return $this->getAuthenticatedRequest(
+            'POST',
+            $this->domainApi.'/account-info',
+            $this->token
+        );
+    }
+
+    /**
+     * Get operation history
+     *
+     * @param string $bankAccountId
+     * @param string $category
+     * @param integer $records
+     * @param string $from
+     * @return array
+     * @permission operation-history
+     */
+    public function getOperationHistory($bankAccountId, $category = null, $records = null, $from = null)
+    {
+        $params = [];
+
+        if ($category) {
+            $params['category'] = $category;
+        }
+
+        if ($records) {
+            $params['records'] = $records;
+        }
+
+        if ($from) {
+            $params['from'] = $from;
+        }
+
+        return $this->getAuthenticatedRequest(
+            'POST',
+            $this->domainApi.'/operation-history/'.$bankAccountId,
+            $this->token,
+            $params
+        );
+    }
+
+    /**
+     * Get balance on account
+     *
+     * @param string $bankAccountId
+     * @return float
+     * @permission account-info
+     */
+    public function getBalance($bankAccountId)
+    {
+        return $this->getAuthenticatedRequest(
+            'POST',
+            $this->domainApi.'/account-info/balance/'.$bankAccountId,
+            $this->token
+        );
+    }
+
+    /**
      * Get the default scopes used by this provider.
      *
      * This should not be a complete list of all scopes, but the minimum
@@ -105,6 +225,17 @@ class Modulbank extends AbstractProvider
     protected function getDefaultScopes()
     {
         return [];
+    }
+
+    /**
+     * Returns the string that should be used to separate scopes when building
+     * the URL for requesting an access token.
+     *
+     * @return string Scope separator, defaults to ','
+     */
+    protected function getScopeSeparator()
+    {
+        return ' ';
     }
 
     /**
@@ -154,5 +285,116 @@ class Modulbank extends AbstractProvider
         }
 
         return $headers;
+    }
+
+    /**
+     * Requests an access token using a specified grant and option set.
+     *
+     * @param  mixed $grant
+     * @param  array $options
+     * @return AccessToken
+     */
+    public function getAccessToken($grant, array $options = [])
+    {
+        $grant = $this->verifyGrant($grant);
+
+        $params = [
+            'clientId'     => ($this->debug?'sandboxapp':$this->clientId),
+            'clientSecret' => ($this->debug?'sandboxappsecret':$this->clientSecret),
+            'redirectUri'  => $this->redirectUri,
+        ];
+
+        if ($this->debug) {
+            $headers['sandbox'] = 'on';
+        }
+
+        $params = array_merge($params, $options);
+        // $params   = $grant->prepareRequestParameters($params, $options);
+
+        $request  = $this->getAccessTokenRequest($params);
+        $response = $this->getResponse($request);
+        $prepared = $this->prepareAccessTokenResponse($response);
+        $token    = $this->createAccessToken($prepared, $grant);
+
+        return $token;
+    }
+
+    /**
+     * Returns authorization parameters based on provided options.
+     *
+     * @param  array $options
+     * @return array Authorization parameters
+     */
+    protected function getAuthorizationParameters(array $options)
+    {
+        if (empty($options['state'])) {
+            $options['state'] = $this->getRandomState();
+        }
+
+        if (empty($options['scope'])) {
+            $options['scope'] = $this->getDefaultScopes();
+        }
+
+        $options += [
+            'responseType'   => 'code',
+            'approvalPrompt' => 'auto'
+        ];
+
+        if (is_array($options['scope'])) {
+            $separator = $this->getScopeSeparator();
+            $options['scope'] = implode($separator, $options['scope']);
+        }
+
+        // Store the state as it may need to be accessed later on.
+        $this->state = $options['state'];
+
+        $options['clientId']    = ($this->debug?'sandboxapp':$this->clientId);
+        $options['redirectUri'] = $this->redirectUri;
+        $options['state']       = $this->state;
+
+        return $options;
+    }
+
+    /**
+     * Builds request options used for requesting an access token.
+     *
+     * @param  array $params
+     * @return array
+     */
+    protected function getAccessTokenOptions(array $params)
+    {
+        // $options = ['headers' => ['content-type' => 'application/x-www-form-urlencoded']];
+
+        if ($this->getAccessTokenMethod() === self::METHOD_POST) {
+            $options['body'] = $this->getAccessTokenBody($params);
+        }
+
+        return $options;
+    }
+
+    /**
+     * Returns the request body for requesting an access token.
+     *
+     * @param  array $params
+     * @return string
+     */
+    protected function getAccessTokenBody(array $params)
+    {
+        return json_encode($params);
+    }
+
+    /**
+     * Creates an access token from a response.
+     *
+     * The grant that was used to fetch the response can be used to provide
+     * additional context.
+     *
+     * @param  array $response
+     * @param  AbstractGrant $grant
+     * @return AccessToken
+     */
+    protected function createAccessToken(array $response, AbstractGrant $grant)
+    {
+        return new ModulbankAccessToken($response);
     }
 }

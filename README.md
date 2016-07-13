@@ -24,60 +24,56 @@ $provider = new \League\OAuth2\Client\Provider\Modulbank([
     'debug'             => false
 ]);
 
-// Get url for registration which must transfer to browser
+// Get url for registration which must transfer to browser (send GET)
 // $url = $provider->getRegistrationUrl($firstName, $lastName, $email, $cellPhone);
 // Or
-// Get url for authorization which must transfer to browser
-$url = $provider->getAuthorizationUrl();
-$_SESSION['oauth2state'] = $provider->getState();
+// Get url for authorization which must transfer to browser (send POST)
+$url = $provider->getAuthorizationUrlShort();
+$params = $provider->getAuthorizationParams([
+    'scope' => 'account-info operation-history assistant-service money-transfer',
+]);
 ```
 
+Callback file:
+
 ```php
-if (empty($_GET['state']) || ($_GET['state'] !== $_SESSION['oauth2state'])) {
-    unset($_SESSION['oauth2state']);
-    exit('Invalid state');
-} else {
-    // Try to get an access token (using the authorization code grant)
-    $token = $provider->getAccessToken('authorization_code', [
-        'code' => $_GET['code']
-    ]);
+$provider = new \League\OAuth2\Client\Provider\Modulbank([
+    'clientId'          => '{modulbank-client-id}',
+    'clientSecret'      => '{modulbank-client-secret}',
+    'debug'             => false
+]);
 
-    // Optional: Now you have a token you can look up a users profile data
-    try {
+$token = $provider->getAccessToken('authorization_code', [
+    'code' => $code
+]);
 
-        // We got an access token, let's now get the user's details
-        $user = $provider->getResourceOwner($token);
+// Use this to interact with an API on the users behalf
+echo $token->getToken();
+```
 
-        // Use these details to create a new profile
-        printf('Hello %s!', $user->getNickname());
+### Call methods
 
-    } catch (Exception $e) {
+```php
+$provider = new \League\OAuth2\Client\Provider\Modulbank([
+    'clientId'          => '{modulbank-client-id}',
+    'clientSecret'      => '{modulbank-client-secret}',
+    'token'             => '{modulbank-client-token}',
+    'debug'             => false
+]);
 
-        // Failed to get user details
-        exit('Oh dear...');
-    }
-
-    // Use this to interact with an API on the users behalf
-    echo $token->getToken();
-}
+$info = $provider->getAccountInfo();
+// $history = $provider->getOperationHistory('9f65fff4-d638-41d8-83eb-a616039d3fe5');
+// $balance = $provider->getBalance('9f65fff4-d638-41d8-83eb-a616039d3fe5');
 ```
 
 ### Managing Scopes
 
-When creating your Github authorization URL, you can specify the state and scopes your application may authorize.
+When creating your Modulbank authorization URL, you can specify the state and scopes your application may authorize.
 
 ```php
-$options = [
-    'state' => 'OPTIONAL_CUSTOM_CONFIGURED_STATE',
-    'scope' => [
-        'account-info',
-        'operation-history',
-        'assistant-service',
-        'money-transfer'
-    ]
-];
-
-$authorizationUrl = $provider->getAuthorizationUrl($options);
+$params = $provider->getAuthorizationParams([
+    'scope' => 'assistant-service money-transfer',
+]);
 ```
 
 If neither are defined, the provider will utilize internal defaults.
@@ -87,7 +83,8 @@ At the time of authoring this documentation, the [following scopes are available
 - account-info
 - operation-history
 - assistant-service
+- money-transfer
 
 ## License
 
-The MIT License (MIT). Please see [License File](https://github.com/thephpleague/oauth2-github/blob/master/LICENSE) for more information.
+The MIT License (MIT). Please see [License File](https://github.com/SlowProg/oauth2-modulbank/blob/master/LICENSE) for more information.
