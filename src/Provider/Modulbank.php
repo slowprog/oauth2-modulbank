@@ -157,11 +157,11 @@ class Modulbank extends AbstractProvider
      */
     public function getAccountInfo()
     {
-        return $this->getAuthenticatedRequest(
+        return json_decode((string)$this->sendRequest($this->getAuthenticatedRequest(
             'POST',
             $this->domainApi.'/account-info',
             $this->token
-        );
+        ))->getBody(), true);
     }
 
     /**
@@ -190,12 +190,12 @@ class Modulbank extends AbstractProvider
             $params['from'] = $from;
         }
 
-        return $this->getAuthenticatedRequest(
+        return json_decode((string)$this->sendRequest($this->getAuthenticatedRequest(
             'POST',
             $this->domainApi.'/operation-history/'.$bankAccountId,
             $this->token,
             $params
-        );
+        ))->getBody(), true);
     }
 
     /**
@@ -207,11 +207,11 @@ class Modulbank extends AbstractProvider
      */
     public function getBalance($bankAccountId)
     {
-        return $this->getAuthenticatedRequest(
+        return json_decode((string)$this->sendRequest($this->getAuthenticatedRequest(
             'POST',
             $this->domainApi.'/account-info/balance/'.$bankAccountId,
             $this->token
-        );
+        ))->getBody(), true);
     }
 
     /**
