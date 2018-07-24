@@ -171,10 +171,11 @@ class Modulbank extends AbstractProvider
      * @param string $category
      * @param integer $records
      * @param string $from
+     * @param string $till
      * @return array
      * @permission operation-history
      */
-    public function getOperationHistory($bankAccountId, $category = null, $records = null, $from = null)
+    public function getOperationHistory($bankAccountId, $category = null, $records = null, $from = null, $till = null)
     {
         $params = [];
 
@@ -190,11 +191,15 @@ class Modulbank extends AbstractProvider
             $params['from'] = $from;
         }
 
+        if ($till) {
+            $params['till'] = $till;
+        }
+
         return json_decode((string)$this->sendRequest($this->getAuthenticatedRequest(
             'POST',
             $this->domainApi.'/operation-history/'.$bankAccountId,
             $this->token,
-            $params
+            ['body' => json_encode($params)]
         ))->getBody(), true);
     }
 
